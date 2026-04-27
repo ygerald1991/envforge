@@ -1,54 +1,59 @@
-"""Command-line interface for envforge."""
+"""CLI entry point for envforge."""
 
-import sys
 import argparse
+import os
+import sys
+
 from envforge.core import capture_env, save_snapshot, list_snapshots
 from envforge.diff import diff_snapshots, format_diff
-from envforge.restore import restore_to_env, restore_to_shell_script, selective_restore
+from envforge.restore import restore_to_shell_script, selective_restore
+from envforge.export import export_snapshot, EXPORT_FORMATS
 
-DEFAULT_DIR = ".envforge"
+DEFAULT_SNAPSHOT_DIR = os.path.expanduser("~/.envforge/snapshots")
 
 
 def cmd_capture(args):
     env = capture_env()
-    save_snapshot(args.name, env, args.dir)
-    print(f"Snapshot '{args.name}' saved ({len(env)} variables).")
+    path = save_snapshot(args.name, env, args.snapshot_dir)
+    print(f"Snapshot '{args.name}' saved to {path}")
 
 
 def cmd_list(args):
-    snapshots = list_snapshots(args.dir)
+    snapshots = list_snapshots(args.snapshot_dir)
     if not snapshots:
         print("No snapshots found.")
     else:
         for name in snapshots:
-            print(f"  {name}")
+            print(name)
 
 
 def cmd_diff(args):
-    result = diff_snapshots(args.snap1, args.snap2, args.dir)
+    result = diff_snapshots(args.snap_a, args.snap_b, args.snapshot_dir)
     print(format_diff(result))
 
 
 def cmd_restore(args):
-    if args.shell:
-        script = restore_to_shell_script(
-            args.name,
-            snapshots_dir=args.dir,
-            shell=args.shell,
-            output_path=args.output,
-        )
-        if not args.output:
-            print(script)
-        else:
-            print(f"Script written to {args.output}")
-    elif args.keys:
-        applied = selective_restore(args.name, args.keys, args.dir)
-        print(f"Restored {len(applied)} variable(s) from '{args.name}':")
-        for k in sorted(applied):
-            print(f"  {k}={applied[k]}")
+    keys = args.keys if args.keys else None
+    script = selective_restore(args.name, args.snapshot_dir, keys) if keys else restore_to_shell_script(args.name, args.snapshot_dir)
+    if args.output:
+        from pathlib import Path
+        Path(args.output).write_text(script)
+        print(f"Restore script written to {args.output}")
     else:
-        applied = restore_to_env(args.name, args.dir)
-        print(f"Restored {len(applied)} variable(s) from '{args.name}' into current process.")
+        print(script)
+
+
+def cmd_export(args):
+    content = export_snapshot(
+        args.name,
+        args.snapshot_dir,
+        fmt=args.format,
+        output_path=args.output if args.output else None,
+    )
+    if args.output:
+        print(f"Exported '{args.name}' as {args.format} to {args.output}")
+    else:
+        print(content, end="")
 
 
 def build_parser():
@@ -56,31 +61,45 @@ def build_parser():
         prog="envforge",
         description="Snapshot, diff, and restore environment variable sets.",
     )
-    parser.add_argument("--dir", default=DEFAULT_DIR, help="Snapshots directory.")
+    parser.add_argument(
+        "--snapshot-dir",
+        default=DEFAULT_SNAPSHOT_DIR,
+        help="Directory where snapshots are stored.",
+    )
+
     sub = parser.add_subparsers(dest="command", required=True)
 
     # capture
     p_capture = sub.add_parser("capture", help="Capture current environment as a snapshot.")
-    p_capture.add_argument("name", help="Snapshot name.")
+    p_capture.add_argument("name", help="Name for the snapshot.")
     p_capture.set_defaults(func=cmd_capture)
 
     # list
-    p_list = sub.add_parser("list", help="List available snapshots.")
+    p_list = sub.add_parser("list", help="List all saved snapshots.")
     p_list.set_defaults(func=cmd_list)
 
     # diff
     p_diff = sub.add_parser("diff", help="Diff two snapshots.")
-    p_diff.add_argument("snap1", help="First snapshot name.")
-    p_diff.add_argument("snap2", help="Second snapshot name.")
+    p_diff.add_argument("snap_a", help="First snapshot name.")
+    p_diff.add_argument("snap_b", help="Second snapshot name.")
     p_diff.set_defaults(func=cmd_diff)
 
     # restore
-    p_restore = sub.add_parser("restore", help="Restore a snapshot.")
+    p_restore = sub.add_parser("restore", help="Restore a snapshot to a shell script.")
     p_restore.add_argument("name", help="Snapshot name to restore.")
-    p_restore.add_argument("--shell", choices=["bash", "sh", "fish"], help="Emit a shell script.")
-    p_restore.add_argument("--output", help="Write shell script to this file.")
     p_restore.add_argument("--keys", nargs="+", help="Restore only specific keys.")
+    p_restore.add_argument("--output", help="Write script to this file instead of stdout.")
     p_restore.set_defaults(func=cmd_restore)
+
+    # export
+    p_export = sub.add_parser("export", help="Export a snapshot to dotenv, JSON, or shell format.")
+    p_export.add_argument("name", help="Snapshot name to export.")
+    p_export.add_argument(
+        "--format", choices=list(EXPORT_FORMATS.keys()), default="dotenv",
+        help="Output format (default: dotenv).",
+    )
+    p_export.add_argument("--output", help="Write output to this file instead of stdout.")
+    p_export.set_defaults(func=cmd_export)
 
     return parser
 
