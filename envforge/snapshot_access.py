@@ -16,7 +16,10 @@ def _load_access_log(base_dir: str) -> List[dict]:
     if not path.exists():
         return []
     with open(path, "r") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
 
 
 def _save_access_log(base_dir: str, log: List[dict]) -> None:
@@ -52,6 +55,23 @@ def get_last_accessed(base_dir: str, snapshot_name: str) -> Optional[dict]:
     """Return the most recent access entry for a snapshot, or None."""
     entries = get_access_log(base_dir, snapshot_name)
     return entries[-1] if entries else None
+
+
+def get_access_summary(base_dir: str) -> List[dict]:
+    """Return a summary of access counts grouped by snapshot name.
+
+    Each entry in the returned list contains the snapshot name, the total
+    number of accesses, and the timestamp of the most recent access.
+    """
+    log = _load_access_log(base_dir)
+    summary: dict[str, dict] = {}
+    for e in log:
+        name = e["snapshot"]
+        if name not in summary:
+            summary[name] = {"snapshot": name, "count": 0, "last_accessed": None}
+        summary[name]["count"] += 1
+        summary[name]["last_accessed"] = e["timestamp"]
+    return sorted(summary.values(), key=lambda x: x["last_accessed"] or "", reverse=True)
 
 
 def format_access_log(entries: List[dict]) -> str:
