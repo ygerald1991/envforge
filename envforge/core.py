@@ -87,6 +87,7 @@ def load_snapshot(name: str, snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR) -> dict:
 
     Raises:
         FileNotFoundError: If no snapshot with that name exists.
+        ValueError: If the snapshot file is corrupt or has an invalid checksum.
     """
     safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
     filename = snapshot_dir / f"{safe_name}.json"
@@ -95,34 +96,20 @@ def load_snapshot(name: str, snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR) -> dict:
         raise FileNotFoundError(f"Snapshot '{name}' not found at {filename}")
 
     with open(filename, "r", encoding="utf-8") as f:
-        return json.load(f)
+        snapshot = json.load(f)
+
+    # Verify checksum integrity on load
+    expected = hashlib.sha256(
+        json.dumps(snapshot["env"], sort_keys=True).encode()
+    ).hexdigest()
+    if snapshot.get("checksum") != expected:
+        raise ValueError(
+            f"Checksum mismatch for snapshot '{name}': file may be corrupt or tampered with."
+        )
+
+    return snapshot
 
 
 def list_snapshots(snapshot_dir: Path = DEFAULT_SNAPSHOT_DIR) -> list[dict]:
     """
-    List all available snapshots with their metadata.
-
-    Args:
-        snapshot_dir: Directory where snapshots are stored.
-
-    Returns:
-        List of snapshot metadata dicts (without the full env payload).
-    """
-    if not snapshot_dir.exists():
-        return []
-
-    snapshots = []
-    for path in sorted(snapshot_dir.glob("*.json")):
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # Return metadata only, omit the full env dict for brevity
-        snapshots.append({
-            "name": data.get("name"),
-            "created_at": data.get("created_at"),
-            "checksum": data.get("checksum"),
-            "tags": data.get("tags", []),
-            "var_count": len(data.get("env", {})),
-            "file": str(path),
-        })
-
-    return snapshots
+    List all available snapsh
