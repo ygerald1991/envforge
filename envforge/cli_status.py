@@ -16,6 +16,7 @@ from envforge.snapshot_status import (
 
 
 def cmd_status(args: argparse.Namespace, store_dir: Optional[str] = None) -> None:
+    """Dispatch status subcommands (set, get, remove, list)."""
     sdir = store_dir or args.store_dir
 
     if args.status_cmd == "set":
@@ -40,27 +41,33 @@ def cmd_status(args: argparse.Namespace, store_dir: Optional[str] = None) -> Non
             print(f"No status entry found for '{args.snapshot}'.")
 
     elif args.status_cmd == "list":
-        if args.filter:
-            try:
-                names = list_by_status(sdir, args.filter)
-            except ValueError as exc:
-                print(f"Error: {exc}")
-                return
-            if not names:
-                print(f"No snapshots with status '{args.filter}'.")
-            else:
-                for name in sorted(names):
-                    print(f"  {name}")
+        _cmd_status_list(sdir, args)
+
+
+def _cmd_status_list(sdir: str, args: argparse.Namespace) -> None:
+    """Handle the 'status list' subcommand, with optional status filter."""
+    if args.filter:
+        try:
+            names = list_by_status(sdir, args.filter)
+        except ValueError as exc:
+            print(f"Error: {exc}")
+            return
+        if not names:
+            print(f"No snapshots with status '{args.filter}'.")
         else:
-            index = get_all_statuses(sdir)
-            if not index:
-                print("No status entries found.")
-            else:
-                for name, status in sorted(index.items()):
-                    print(f"  {name}: {status}")
+            for name in sorted(names):
+                print(f"  {name}")
+    else:
+        index = get_all_statuses(sdir)
+        if not index:
+            print("No status entries found.")
+        else:
+            for name, status in sorted(index.items()):
+                print(f"  {name}: {status}")
 
 
 def build_status_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    """Register the 'status' command and its subcommands with the given subparsers."""
     p = subparsers.add_parser("status", help="Manage snapshot status labels")
     p.add_argument("--store-dir", default=".envforge", help="Snapshot store directory")
     sub = p.add_subparsers(dest="status_cmd", required=True)
